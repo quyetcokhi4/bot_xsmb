@@ -17,7 +17,8 @@ def send_telegram_message(message):
         "parse_mode": "Markdown"
     }
     try:
-        requests.post(url, json=payload)
+        res = requests.post(url, json=payload)
+        print(f"Phản hồi từ Telegram: {res.status_code}")
     except Exception as e:
         print(f"Lỗi gửi tin: {e}")
 
@@ -51,16 +52,10 @@ def get_chot_so_content():
 
 def get_thong_ke_content():
     today = datetime.now().strftime("%d/%m/%Y")
-    try:
-        res = requests.get("https://wapi.ketqua.net/api/v1/lotto-result/mb")
-        data = res.json()
-    except Exception as e:
-        print(f"Lỗi lấy kết quả: {e}")
-
     baocao = f"""📊 *BÁO CÁO KẾT QUẢ XSMB ({today})* 📊
 
 🎰 *Kết quả quay thưởng:*
-- Đề về: `[Đang cập nhật từ hệ thống]`
+- Đề về: `[Đang cập nhật]`
 - Lô về: `[Đang cập nhật]`
 
 💰 *Tổng kết hôm nay:*
@@ -69,36 +64,16 @@ def get_thong_ke_content():
 👉 *Lãi / Lỗ ngày:* `...`k
 
 📈 *THỐNG KÊ LŨY KẾ CẢ THÁNG:*
-- Tổng số ngày đánh: ... ngày
 - Tổng lãi/lỗ cả tháng: `...`k
 """
     return baocao
 
-def check_telegram_updates(last_update_id):
-    """Kiểm tra lệnh chat từ Telegram gửi đến bot"""
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={last_update_id + 1}&timeout=5"
-    try:
-        res = requests.get(url, timeout=10)
-        data = res.json()
-        if data.get("ok") and data.get("result"):
-            for update in data["result"]:
-                last_update_id = update["update_id"]
-                message = update.get("message", {})
-                text = message.get("text", "").strip().lower()
-                
-                if text in ["/start", "/chotso"]:
-                    msg = get_chot_so_content()
-                    send_telegram_message(msg)
-                elif text == "/result":
-                    baocao = get_thong_ke_content()
-                    send_telegram_message(baocao)
-    except Exception as e:
-        print(f"Lỗi đọc tin nhắn Telegram: {e}")
-    return last_update_id
+print("Bot XSMB đang khởi động...")
 
-print("Bot quản lý XSMB tương tác đã chạy ngầm 24/7...")
+# Gửi ngay tin nhắn kiểm tra kết nối ngay khi bot vừa bật lên để bạn thấy kết nối thành công
+init_msg = "🤖 *Bot quản lý XSMB đã kết nối thành công!* \nĐang chờ lịch chạy tự động lúc 16:00 và 18:35..."
+send_telegram_message(init_msg)
 
-last_update_id = 0
 sent_chot_so_today = False
 sent_ket_qua_today = False
 
@@ -107,27 +82,24 @@ while True:
     current_hour = now.hour
     current_minute = now.minute
     
-    # 1. Quét lệnh chat từ Telegram liên tục
-    last_update_id = check_telegram_updates(last_update_id)
-    
-    # 2. Lịch tự động lúc 16:00 Chốt số
+    # 16:00 Chốt số tự động
     if current_hour == 16 and current_minute == 0:
         if not sent_chot_so_today:
             send_telegram_message(get_chot_so_content())
             sent_chot_so_today = True
             time.sleep(60)
             
-    # 3. Lịch tự động lúc 18:35 Báo cáo kết quả
+    # 18:35 Cào kết quả và báo cáo
     elif current_hour == 18 and current_minute == 35:
         if not sent_ket_qua_today:
             send_telegram_message(get_thong_ke_content())
             sent_ket_qua_today = True
             time.sleep(60)
             
-    # Reset cờ sang ngày mới khi qua 00:00 đêm
+    # Reset cờ sang ngày mới lúc 00:00
     elif current_hour == 0 and current_minute == 0:
-        sent_chot_so_today = False
+        sent_ch_so_today = False
         sent_ket_qua_today = False
         time.sleep(60)
         
-    time.sleep(3)
+    time.sleep(30)
