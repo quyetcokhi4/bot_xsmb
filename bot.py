@@ -7,7 +7,6 @@ import requests
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("CHAT_ID")
 
-# File lưu lịch sử chơi và tổng kết tháng
 HISTORY_FILE = "history_log.txt"
 
 def send_telegram_message(message):
@@ -23,11 +22,10 @@ def send_telegram_message(message):
         print(f"Lỗi gửi tin: {e}")
 
 def save_daily_numbers(date_str, btl, x2, x3, de_list):
-    """Lưu số đã đánh trong ngày để tối dò kết quả"""
     with open(HISTORY_FILE, "a", encoding="utf-8") as f:
         f.write(f"{date_str}|BTL:{btl}|X2:{x2[0]}-{x2[1]}|X3:{x3[0]}-{x3[1]}-{x3[2]}|DE:{','.join(de_list)}\n")
 
-def main_chot_so():
+def get_chot_so_content():
     today = datetime.now().strftime("%d/%m/%Y")
     date_key = datetime.now().strftime("%Y-%m-%d")
     
@@ -38,7 +36,6 @@ def main_chot_so():
     xien_3 = (xien_pool[2], xien_pool[3], xien_pool[4])
     danh_de = sorted(random.sample(all_numbers, 20))
     
-    # Lưu lại để tối đối chiếu
     save_daily_numbers(date_key, btl, xien_2, xien_3, danh_de)
     
     msg = f"""🎯 *CHỐT SỐ XSMB HÔM NAY ({today})* 🎯
@@ -50,21 +47,16 @@ def main_chot_so():
 
 🎲 *Dàn đề 20 số (10k/số):*
 `{', '.join(danh_de)}`"""
+    return msg
 
-    send_telegram_message(msg)
-
-def main_thong_ke_ket_qua():
-    """Hàm chạy lúc 18h35 để cào kết quả, đối chiếu và báo cáo"""
+def get_thong_ke_content():
     today = datetime.now().strftime("%d/%m/%Y")
-    
     try:
-        # Logic cào kết quả XSMB
         res = requests.get("https://wapi.ketqua.net/api/v1/lotto-result/mb")
         data = res.json()
     except Exception as e:
         print(f"Lỗi lấy kết quả: {e}")
 
-    # Mẫu báo cáo tự động gửi về sau khi có kết quả
     baocao = f"""📊 *BÁO CÁO KẾT QUẢ XSMB ({today})* 📊
 
 🎰 *Kết quả quay thưởng:*
@@ -80,10 +72,33 @@ def main_thong_ke_ket_qua():
 - Tổng số ngày đánh: ... ngày
 - Tổng lãi/lỗ cả tháng: `...`k
 """
-    send_telegram_message(baocao)
+    return baocao
 
-print("Bot quản lý XSMB & Thống kê đang chạy ngầm 24/7...")
+def check_telegram_updates(last_update_id):
+    """Kiểm tra lệnh chat từ Telegram gửi đến bot"""
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={last_update_id + 1}&timeout=5"
+    try:
+        res = requests.get(url, timeout=10)
+        data = res.json()
+        if data.get("ok") and data.get("result"):
+            for update in data["result"]:
+                last_update_id = update["update_id"]
+                message = update.get("message", {})
+                text = message.get("text", "").strip().lower()
+                
+                if text in ["/start", "/chotso"]:
+                    msg = get_chot_so_content()
+                    send_telegram_message(msg)
+                elif text == "/result":
+                    baocao = get_thong_ke_content()
+                    send_telegram_message(baocao)
+    except Exception as e:
+        print(f"Lỗi đọc tin nhắn Telegram: {e}")
+    return last_update_id
 
+print("Bot quản lý XSMB tương tác đã chạy ngầm 24/7...")
+
+last_update_id = 0
 sent_chot_so_today = False
 sent_ket_qua_today = False
 
@@ -92,17 +107,20 @@ while True:
     current_hour = now.hour
     current_minute = now.minute
     
-    # 16:00 Chốt số
+    # 1. Quét lệnh chat từ Telegram liên tục
+    last_update_id = check_telegram_updates(last_update_id)
+    
+    # 2. Lịch tự động lúc 16:00 Chốt số
     if current_hour == 16 and current_minute == 0:
         if not sent_chot_so_today:
-            main_chot_so()
+            send_telegram_message(get_chot_so_content())
             sent_chot_so_today = True
             time.sleep(60)
             
-    # 18:35 Cào kết quả và báo cáo
+    # 3. Lịch tự động lúc 18:35 Báo cáo kết quả
     elif current_hour == 18 and current_minute == 35:
         if not sent_ket_qua_today:
-            main_thong_ke_ket_qua()
+            send_telegram_message(get_thong_ke_content())
             sent_ket_qua_today = True
             time.sleep(60)
             
@@ -112,4 +130,4 @@ while True:
         sent_ket_qua_today = False
         time.sleep(60)
         
-    time.sleep(20)
+    time.sleep(3)
